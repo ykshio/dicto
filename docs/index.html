@@ -91,29 +91,32 @@
         .code-block {
             position: relative;
             background: #1a1a2e;
-            color: #e0e0e0;
             border-radius: 10px;
+            margin: 16px 0;
+            overflow: hidden;
+        }
+        .code-block code {
+            display: block;
+            color: #e0e0e0;
             padding: 16px 20px;
             font-family: 'SF Mono', 'Menlo', monospace;
             font-size: 13px;
-            margin: 16px 0;
             overflow-x: auto;
             word-break: break-all;
             line-height: 1.5;
         }
         .copy-btn {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(255,255,255,0.15);
+            display: block;
+            width: 100%;
+            background: rgba(255,255,255,0.08);
             border: none;
-            color: #ccc;
-            padding: 6px 12px;
-            border-radius: 6px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: #aaa;
+            padding: 10px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 13px;
         }
-        .copy-btn:hover { background: rgba(255,255,255,0.25); }
+        .copy-btn:hover { background: rgba(255,255,255,0.15); }
         .copy-btn.copied { color: #4ade80; }
         .note {
             background: #fffbeb;
@@ -187,8 +190,8 @@
                 <span class="step-num">2</span>
                 <span class="step-title">以下をコピーして貼り付け、Enterキーを押す</span>
                 <div class="code-block">
+                    <code>curl -fsSL https://ykshio.github.io/dicto/install.sh | bash</code>
                     <button class="copy-btn" onclick="copyCommand(this)">コピー</button>
-                    curl -fsSL https://ykshio.github.io/dicto/install.sh | bash
                 </div>
             </div>
 
@@ -232,7 +235,7 @@
 
     <script>
         function copyCommand(btn) {
-            const code = btn.parentElement.textContent.replace('コピー', '').trim();
+            const code = btn.parentElement.querySelector('code').textContent.trim();
             navigator.clipboard.writeText(code);
             btn.textContent = 'コピー済み';
             btn.classList.add('copied');
