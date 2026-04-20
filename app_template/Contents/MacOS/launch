@@ -20,6 +20,9 @@ if lsof -ti:7860 >/dev/null 2>&1; then
     exit 0
 fi
 
+# 起動中の通知
+osascript -e 'display notification "アプリを起動しています..." with title "dicto"'
+
 # pythonをバックグラウンドで起動
 cd "$INSTALL_DIR"
 nohup caffeinate -is ./venv/bin/python app.py >/dev/null 2>&1 &
@@ -28,6 +31,7 @@ nohup caffeinate -is ./venv/bin/python app.py >/dev/null 2>&1 &
 (
     for i in $(seq 1 120); do
         if curl -s http://127.0.0.1:7860 >/dev/null 2>&1; then
+            osascript -e 'display notification "準備完了。ブラウザを開きます。" with title "dicto"'
             open "http://127.0.0.1:7860"
             exit 0
         fi
