@@ -46,7 +46,7 @@ fi
 cd "$INSTALL_DIR"
 
 # 実行権限を付与
-chmod +x install.command 起動.command app_template/Contents/MacOS/launch
+chmod +x install.command 起動.command launcher.sh app_template/Contents/MacOS/launch
 
 # --- Python仮想環境 ---
 echo "[4/5] Python環境をセットアップ中..."
@@ -60,8 +60,23 @@ fi
 echo "[5/5] アプリを生成中..."
 APP_DIR="/Applications/dicto.app"
 rm -rf "$APP_DIR"
-cp -R app_template "$APP_DIR"
-echo "$INSTALL_DIR" > "$APP_DIR/Contents/Resources/install_path.txt"
+
+osacompile -o "$APP_DIR" -e '
+on run
+    set home to POSIX path of (path to home folder)
+    set launcherPath to home & "dicto/launcher.sh"
+    try
+        do shell script "test -f " & quoted form of launcherPath
+    on error
+        display dialog "dictoがインストールされていません。" & return & "インストールコマンドを実行してください。" buttons {"OK"} default button "OK" with icon stop with title "dicto"
+        return
+    end try
+    do shell script quoted form of launcherPath & " &>/dev/null &"
+end run
+'
+
+# アイコンを設定
+cp app_template/Contents/Resources/icon.icns "$APP_DIR/Contents/Resources/applet.icns"
 
 echo ""
 echo "=================================================="
