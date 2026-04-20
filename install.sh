@@ -45,6 +45,9 @@ fi
 
 cd "$INSTALL_DIR"
 
+# 実行権限を付与
+chmod +x install.command 起動.command app_template/Contents/MacOS/launch
+
 # --- Python仮想環境 ---
 echo "[4/5] Python環境をセットアップ中..."
 if [ ! -d "venv" ]; then
