@@ -103,7 +103,7 @@
             font-family: 'SF Mono', 'Menlo', monospace;
             font-size: 13px;
             overflow-x: auto;
-            word-break: break-all;
+            white-space: nowrap;
             line-height: 1.5;
         }
         .copy-btn {
@@ -224,8 +224,8 @@
             <h2>アップデート</h2>
             <p style="font-size:14px; color:#666; margin-bottom:12px;">同じコマンドを再実行するだけで最新版に更新されます。</p>
             <div class="code-block">
+                <code>curl -fsSL https://ykshio.github.io/dicto/install.sh | bash</code>
                 <button class="copy-btn" onclick="copyCommand(this)">コピー</button>
-                curl -fsSL https://ykshio.github.io/dicto/install.sh | bash
             </div>
         </div>
 
