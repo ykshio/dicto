@@ -1,0 +1,38 @@
+#!/bin/bash
+# 文字起こしアプリ ランチャー
+# このスクリプトはinstall.commandで生成された.appから呼ばれる
+
+# インストール先のパスを取得(.appと同階層に記録されたパスを読む)
+INSTALL_DIR="$(cat "$(dirname "$0")/../Resources/install_path.txt" 2>/dev/null)"
+
+if [ -z "$INSTALL_DIR" ] || [ ! -d "$INSTALL_DIR" ]; then
+    osascript -e 'display dialog "アプリのインストール先が見つかりません。\ninstall.commandを再実行してください。" buttons {"OK"} default button "OK" with icon stop with title "文字起こしアプリ"'
+    exit 1
+fi
+
+if [ ! -d "$INSTALL_DIR/venv" ]; then
+    osascript -e 'display dialog "Python環境が見つかりません。\ninstall.commandを再実行してください。" buttons {"OK"} default button "OK" with icon stop with title "文字起こしアプリ"'
+    exit 1
+fi
+
+# 既に起動中なら、ブラウザだけ開いて終了
+if lsof -ti:7860 >/dev/null 2>&1; then
+    open "http://127.0.0.1:7860"
+    exit 0
+fi
+
+# アプリ起動(ターミナルなし、バックグラウンドで)
+cd "$INSTALL_DIR"
+caffeinate -is ./venv/bin/python app.py &
+
+# サーバー起動を待ってブラウザを開く
+for i in $(seq 1 60); do
+    if curl -s http://127.0.0.1:7860 >/dev/null 2>&1; then
+        open "http://127.0.0.1:7860"
+        exit 0
+    fi
+    sleep 1
+done
+
+osascript -e 'display dialog "アプリの起動に失敗しました。\nもう一度お試しください。" buttons {"OK"} default button "OK" with icon stop with title "文字起こしアプリ"'
+exit 1
