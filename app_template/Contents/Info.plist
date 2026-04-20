@@ -5,11 +5,11 @@
 	<key>CFBundleExecutable</key>
 	<string>launch</string>
 	<key>CFBundleName</key>
-	<string>文字起こし</string>
+	<string>dicto</string>
 	<key>CFBundleDisplayName</key>
-	<string>文字起こし</string>
+	<string>dicto</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.local.whisper-transcribe</string>
+	<string>com.ykshio.dicto</string>
 	<key>CFBundleVersion</key>
 	<string>1.0</string>
 	<key>CFBundleShortVersionString</key>
