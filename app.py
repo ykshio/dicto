@@ -58,10 +58,6 @@ def get_model(model_size):
     return model
 
 
-# 起動時にデフォルトモデルをロード
-get_model(DEFAULT_MODEL)
-
-
 def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress()):
     """音声ファイルを文字起こしする"""
     if audio_file is None:
@@ -70,10 +66,12 @@ def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress(
     # 操作があったのでタイマーリセット
     reset_shutdown_timer()
 
-    progress(0, desc="準備中...")
+    progress(0, desc="モデルを準備中...")
 
-    # モデル取得(変更があればここでリロード)
+    # モデル取得(初回 or 変更時にロード)
     model = get_model(model_size)
+
+    progress(0.05, desc="準備完了")
 
     # 言語設定
     lang = None if language == "自動検出" else language
@@ -231,7 +229,20 @@ def open_browser():
     webbrowser.open("http://127.0.0.1:7860")
 
 
+def kill_existing():
+    """既存のdictoプロセスがポートを使っていたら停止"""
+    import subprocess
+    result = subprocess.run(["lsof", "-ti:7860"], capture_output=True, text=True)
+    for pid in result.stdout.strip().split("\n"):
+        if pid and int(pid) != os.getpid():
+            os.kill(int(pid), signal.SIGTERM)
+            time.sleep(1)
+
+
 if __name__ == "__main__":
+    # 既存プロセスを停止
+    kill_existing()
+
     # 自動終了タイマー開始
     reset_shutdown_timer()
 
