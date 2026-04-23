@@ -23,7 +23,11 @@ if ! command -v brew &> /dev/null; then
     echo ""
     echo "※ Macのログインパスワードを求められます。入力しても画面には表示されませんが、正常です。"
     echo ""
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # パイプ経由だとstdinが使えずsudoが失敗するため、一度ファイルに保存して実行
+    BREW_INSTALLER=$(mktemp)
+    curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "$BREW_INSTALLER"
+    /bin/bash "$BREW_INSTALLER" </dev/tty
+    rm -f "$BREW_INSTALLER"
 
     if [[ -f /opt/homebrew/bin/brew ]]; then
         eval "$(/opt/homebrew/bin/brew shellenv)"
