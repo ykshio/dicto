@@ -27,14 +27,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+import platform
 import gradio as gr
 from faster_whisper import WhisperModel
 
 # ===== 設定 =====
-DEVICE = "cpu"  # MacではCPU推奨(CoreML対応は別途必要)
-COMPUTE_TYPE = "int8"  # int8は軽量で実用的
-DEFAULT_MODEL = "medium"
+DEVICE = "cpu"
+COMPUTE_TYPE = "int8"
+IS_APPLE_SILICON = platform.machine() == "arm64"
+DEFAULT_MODEL = "turbo" if IS_APPLE_SILICON else "medium"
 AUTO_SHUTDOWN_MINUTES = 30  # 最後の操作からこの時間で自動終了
+
+# MLXモデル設定
+MLX_MODELS = {
+    "turbo": "mlx-community/whisper-large-v3-turbo",
+}
 
 # ==================
 
@@ -61,17 +68,24 @@ def auto_shutdown():
     os.kill(os.getpid(), signal.SIGTERM)
 
 
+def is_mlx_model(model_size):
+    return model_size in MLX_MODELS
+
 def get_model(model_size):
     """モデルを取得(同じモデルなら再ロードしない)"""
     if current_model["name"] == model_size:
         return current_model["instance"]
 
     logger.info(f"モデルを読み込み中: {model_size} ...")
-    model = WhisperModel(model_size, device=DEVICE, compute_type=COMPUTE_TYPE)
+    if is_mlx_model(model_size):
+        # mlx-whisperはモジュール自体がモデルを管理するのでNone
+        current_model["instance"] = None
+    else:
+        model = WhisperModel(model_size, device=DEVICE, compute_type=COMPUTE_TYPE)
+        current_model["instance"] = model
     current_model["name"] = model_size
-    current_model["instance"] = model
     logger.info(f"モデル {model_size} の準備完了")
-    return model
+    return current_model["instance"]
 
 
 def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress()):
@@ -95,39 +109,63 @@ def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress(
         lang = None if language == "自動検出" else language
 
         progress(0.1, desc="文字起こし中... (時間がかかります)")
-        segments, info = model.transcribe(
-            audio_file,
-            language=lang,
-            beam_size=5,
-            vad_filter=True,
-            vad_parameters=dict(
-                min_silence_duration_ms=500,
-            ),
-            condition_on_previous_text=False,  # ループ対策
-            compression_ratio_threshold=2.4,   # 繰り返し検出
-            no_speech_threshold=0.6,           # 無音の幻聴抑制
-        )
 
-        # 結果を集める
         result_text = []
         timestamped_text = []
 
-        total_duration = info.duration
-        logger.info(f"文字起こし開始: 長さ={format_time(total_duration)}, 言語={info.language}")
+        if is_mlx_model(model_size):
+            import mlx_whisper
+            decode_opts = {} if lang is None else {"language": lang}
+            mlx_result = mlx_whisper.transcribe(
+                audio_file,
+                path_or_hf_repo=MLX_MODELS[model_size],
+                condition_on_previous_text=False,
+                compression_ratio_threshold=2.4,
+                no_speech_threshold=0.6,
+                **decode_opts,
+            )
+            detected_lang = mlx_result.get("language", lang or "?")
+            segments_list = mlx_result.get("segments", [])
+            total_duration = segments_list[-1]["end"] if segments_list else 0
+            logger.info(f"文字起こし開始(MLX): 長さ={format_time(total_duration)}, 言語={detected_lang}")
 
-        seg_count = 0
-        for segment in segments:
-            seg_count += 1
-            result_text.append(segment.text.strip())
-            start = format_time(segment.start)
-            end = format_time(segment.end)
-            timestamped_text.append(f"[{start} - {end}] {segment.text.strip()}")
+            for i, seg in enumerate(segments_list):
+                result_text.append(seg["text"].strip())
+                start = format_time(seg["start"])
+                end = format_time(seg["end"])
+                timestamped_text.append(f"[{start} - {end}] {seg['text'].strip()}")
 
-            if seg_count % 50 == 1:
-                logger.info(f"処理中: セグメント{seg_count}, {end} / {format_time(total_duration)}")
+            progress(0.9, desc="文字起こし完了")
+        else:
+            segments, info = model.transcribe(
+                audio_file,
+                language=lang,
+                beam_size=5,
+                vad_filter=True,
+                vad_parameters=dict(
+                    min_silence_duration_ms=500,
+                ),
+                condition_on_previous_text=False,
+                compression_ratio_threshold=2.4,
+                no_speech_threshold=0.6,
+            )
+            total_duration = info.duration
+            detected_lang = info.language
+            logger.info(f"文字起こし開始: 長さ={format_time(total_duration)}, 言語={detected_lang}")
 
-            progress_val = min(0.1 + (segment.end / total_duration) * 0.85, 0.95)
-            progress(progress_val, desc=f"文字起こし中... ({format_time(segment.end)} / {format_time(total_duration)})")
+            seg_count = 0
+            for segment in segments:
+                seg_count += 1
+                result_text.append(segment.text.strip())
+                start = format_time(segment.start)
+                end = format_time(segment.end)
+                timestamped_text.append(f"[{start} - {end}] {segment.text.strip()}")
+
+                if seg_count % 50 == 1:
+                    logger.info(f"処理中: セグメント{seg_count}, {end} / {format_time(total_duration)}")
+
+                progress_val = min(0.1 + (segment.end / total_duration) * 0.85, 0.95)
+                progress(progress_val, desc=f"文字起こし中... ({format_time(segment.end)} / {format_time(total_duration)})")
 
         progress(0.95, desc="ファイル保存中...")
 
@@ -137,9 +175,9 @@ def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress(
         # 結果テキストを作成
         file_content = f"=== 文字起こし結果 ===\n"
         file_content += f"元ファイル: {Path(audio_file).name}\n"
-        file_content += f"検出言語: {info.language}\n"
+        file_content += f"検出言語: {detected_lang}\n"
         file_content += f"使用モデル: {model_size}\n"
-        file_content += f"長さ: {format_time(info.duration)}\n\n"
+        file_content += f"長さ: {format_time(total_duration)}\n\n"
         file_content += "=== 本文 ===\n"
         file_content += plain_text
         file_content += "\n\n=== タイムスタンプ付き ===\n"
@@ -167,7 +205,7 @@ def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress(
 
         progress(1.0, desc="完了!")
 
-        info_text = f"✓ 完了しました!\n\n検出言語: {info.language}\n使用モデル: {model_size}\n長さ: {format_time(info.duration)}\n保存先: {output_file}"
+        info_text = f"✓ 完了しました!\n\n検出言語: {detected_lang}\n使用モデル: {model_size}\n長さ: {format_time(total_duration)}\n保存先: {output_file}"
 
         return plain_text, timestamped, info_text, str(tmp_file)
 
@@ -207,11 +245,12 @@ with gr.Blocks(title="文字起こしアプリ") as app:
                 label="言語(日本語なら ja のままでOK)",
             )
             with gr.Accordion("⚙️ 設定", open=False):
+                model_choices = ["turbo", "tiny", "base", "small", "medium", "large-v3"] if IS_APPLE_SILICON else ["tiny", "base", "small", "medium", "large-v3"]
                 model_choice = gr.Radio(
-                    choices=["tiny", "base", "small", "medium", "large-v3"],
+                    choices=model_choices,
                     value=DEFAULT_MODEL,
                     label="モデルサイズ",
-                    info="tiny→速い/低精度, medium→バランス, large-v3→高精度/遅い",
+                    info="turbo→Apple Silicon高速/高精度, medium→バランス, large-v3→最高精度/遅い" if IS_APPLE_SILICON else "tiny→速い/低精度, medium→バランス, large-v3→高精度/遅い",
                 )
                 save_dir_input = gr.Textbox(
                     label="保存先フォルダ",

@@ -55,6 +55,11 @@ if [ ! -d "venv" ]; then
 fi
 ./venv/bin/pip install --upgrade pip -q
 ./venv/bin/pip install faster-whisper gradio -q
+# Apple Siliconの場合はMLXもインストール
+if [ "$(uname -m)" = "arm64" ]; then
+    echo "    Apple Silicon検出: MLX高速モデルをインストール中..."
+    ./venv/bin/pip install mlx-whisper -q
+fi
 
 # --- .appの生成 ---
 echo "[5/5] アプリを生成中..."
