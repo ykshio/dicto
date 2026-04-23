@@ -14,6 +14,12 @@ INSTALL_DIR="$HOME/dicto"
 
 if [ -d "$INSTALL_DIR" ]; then
     echo "既存のインストールが見つかりました。更新します。"
+    # 実行中のdictoを停止
+    if lsof -ti:7860 >/dev/null 2>&1; then
+        echo "実行中のdictoを停止します..."
+        kill $(lsof -ti:7860) 2>/dev/null || true
+        sleep 1
+    fi
     echo ""
 fi
 
