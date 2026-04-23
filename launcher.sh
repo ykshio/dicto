@@ -4,6 +4,13 @@
 
 INSTALL_DIR="$HOME/dicto"
 
+# Homebrew PATHを設定（AppleScriptからはPATHが最小限のため）
+if [[ -f /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [[ -f /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+fi
+
 # 既に起動中ならブラウザだけ開く
 if lsof -ti:7860 >/dev/null 2>&1; then
     open "http://127.0.0.1:7860"
