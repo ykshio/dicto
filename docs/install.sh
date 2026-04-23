@@ -71,9 +71,9 @@ fi
 # --- .appの生成 ---
 echo "[5/5] アプリを生成中..."
 APP_DIR="/Applications/dicto.app"
-rm -rf "$APP_DIR"
+rm -rf "$APP_DIR" 2>/dev/null || true
 
-osacompile -o "$APP_DIR" -e '
+if osacompile -o "$APP_DIR" -e '
 on run
     set home to POSIX path of (path to home folder)
     set launcherPath to home & "dicto/launcher.sh"
@@ -85,10 +85,15 @@ on run
     end try
     do shell script quoted form of launcherPath & " &>/dev/null &"
 end run
-'
-
-# アイコンを設定
-cp app_template/Contents/Resources/icon.icns "$APP_DIR/Contents/Resources/applet.icns"
+' 2>/dev/null; then
+    # アイコンを設定
+    cp app_template/Contents/Resources/icon.icns "$APP_DIR/Contents/Resources/applet.icns" 2>/dev/null || true
+    echo "✓ /Applications/dicto.app を作成しました"
+else
+    echo ""
+    echo "⚠️  アプリの生成に失敗しました。以下のコマンドで直接起動できます:"
+    echo "    cd ~/dicto && ./venv/bin/python app.py"
+fi
 
 echo ""
 echo "=================================================="
