@@ -122,6 +122,7 @@ def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress(
                 condition_on_previous_text=False,
                 compression_ratio_threshold=2.4,
                 no_speech_threshold=0.6,
+                hallucination_silence_threshold=2.0,
                 **decode_opts,
             )
             detected_lang = mlx_result.get("language", lang or "?")
@@ -130,10 +131,13 @@ def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress(
             logger.info(f"文字起こし開始(MLX): 長さ={format_time(total_duration)}, 言語={detected_lang}")
 
             for i, seg in enumerate(segments_list):
-                result_text.append(seg["text"].strip())
+                text = seg["text"].strip()
+                if not text:
+                    continue
+                result_text.append(text)
                 start = format_time(seg["start"])
                 end = format_time(seg["end"])
-                timestamped_text.append(f"[{start} - {end}] {seg['text'].strip()}")
+                timestamped_text.append(f"[{start} - {end}] {text}")
 
             progress(0.9, desc="文字起こし完了")
         else:
