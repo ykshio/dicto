@@ -9,7 +9,23 @@ import signal
 import webbrowser
 import threading
 import time
+import traceback
+import logging
+import tempfile
+import shutil
 from pathlib import Path
+
+# ログ設定（ファイルとコンソールに出力）
+LOG_FILE = Path(__file__).parent / "dicto.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger(__name__)
 
 import gradio as gr
 from faster_whisper import WhisperModel
@@ -41,7 +57,7 @@ def reset_shutdown_timer():
 
 def auto_shutdown():
     """自動終了"""
-    print(f"\n{AUTO_SHUTDOWN_MINUTES}分間操作がなかったため、自動終了します。")
+    logger.info(f"{AUTO_SHUTDOWN_MINUTES}分間操作がなかったため、自動終了します。")
     os.kill(os.getpid(), signal.SIGTERM)
 
 
@@ -50,35 +66,35 @@ def get_model(model_size):
     if current_model["name"] == model_size:
         return current_model["instance"]
 
-    print(f"モデルを読み込み中: {model_size} ...")
+    logger.info(f"モデルを読み込み中: {model_size} ...")
     model = WhisperModel(model_size, device=DEVICE, compute_type=COMPUTE_TYPE)
     current_model["name"] = model_size
     current_model["instance"] = model
-    print(f"✓ モデル {model_size} の準備完了!")
+    logger.info(f"モデル {model_size} の準備完了")
     return model
 
 
 def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress()):
     """音声ファイルを文字起こしする"""
+    logger.info(f"transcribe開始: file={audio_file}, lang={language}, model={model_size}")
     if audio_file is None:
         return "ファイルをアップロードしてください。", "", "", None
 
     # 操作があったのでタイマーリセット
     reset_shutdown_timer()
 
-    progress(0, desc="モデルを準備中...")
-
-    # モデル取得(初回 or 変更時にロード)
-    model = get_model(model_size)
-
-    progress(0.05, desc="準備完了")
-
-    # 言語設定
-    lang = None if language == "自動検出" else language
-
-    progress(0.1, desc="文字起こし中... (時間がかかります)")
-
     try:
+        progress(0, desc="モデルを準備中...")
+
+        # モデル取得(初回 or 変更時にロード)
+        model = get_model(model_size)
+
+        progress(0.05, desc="準備完了")
+
+        # 言語設定
+        lang = None if language == "自動検出" else language
+
+        progress(0.1, desc="文字起こし中... (時間がかかります)")
         segments, info = model.transcribe(
             audio_file,
             language=lang,
@@ -97,12 +113,18 @@ def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress(
         timestamped_text = []
 
         total_duration = info.duration
+        logger.info(f"文字起こし開始: 長さ={format_time(total_duration)}, 言語={info.language}")
 
+        seg_count = 0
         for segment in segments:
+            seg_count += 1
             result_text.append(segment.text.strip())
             start = format_time(segment.start)
             end = format_time(segment.end)
             timestamped_text.append(f"[{start} - {end}] {segment.text.strip()}")
+
+            if seg_count % 50 == 1:
+                logger.info(f"処理中: セグメント{seg_count}, {end} / {format_time(total_duration)}")
 
             progress_val = min(0.1 + (segment.end / total_duration) * 0.85, 0.95)
             progress(progress_val, desc=f"文字起こし中... ({format_time(segment.end)} / {format_time(total_duration)})")
@@ -112,7 +134,18 @@ def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress(
         plain_text = "\n".join(result_text)
         timestamped = "\n".join(timestamped_text)
 
-        # 保存先の決定
+        # 結果テキストを作成
+        file_content = f"=== 文字起こし結果 ===\n"
+        file_content += f"元ファイル: {Path(audio_file).name}\n"
+        file_content += f"検出言語: {info.language}\n"
+        file_content += f"使用モデル: {model_size}\n"
+        file_content += f"長さ: {format_time(info.duration)}\n\n"
+        file_content += "=== 本文 ===\n"
+        file_content += plain_text
+        file_content += "\n\n=== タイムスタンプ付き ===\n"
+        file_content += timestamped
+
+        # ユーザー指定の保存先に保存
         save_path = Path(save_dir.strip()) if save_dir and save_dir.strip() else Path.home() / "Desktop"
         if not save_path.exists():
             save_path = Path.home() / "Desktop"
@@ -120,30 +153,26 @@ def transcribe(audio_file, language, model_size, save_dir, progress=gr.Progress(
         base_name = Path(audio_file).stem
         output_file = save_path / f"{base_name}_文字起こし.txt"
 
-        # 重複回避
         counter = 1
         while output_file.exists():
             output_file = save_path / f"{base_name}_文字起こし_{counter}.txt"
             counter += 1
 
         with open(output_file, "w", encoding="utf-8") as f:
-            f.write(f"=== 文字起こし結果 ===\n")
-            f.write(f"元ファイル: {Path(audio_file).name}\n")
-            f.write(f"検出言語: {info.language}\n")
-            f.write(f"使用モデル: {model_size}\n")
-            f.write(f"長さ: {format_time(info.duration)}\n\n")
-            f.write("=== 本文 ===\n")
-            f.write(plain_text)
-            f.write("\n\n=== タイムスタンプ付き ===\n")
-            f.write(timestamped)
+            f.write(file_content)
+
+        # Gradioダウンロード用に一時ファイルを作成
+        tmp_file = Path(tempfile.gettempdir()) / output_file.name
+        shutil.copy2(output_file, tmp_file)
 
         progress(1.0, desc="完了!")
 
         info_text = f"✓ 完了しました!\n\n検出言語: {info.language}\n使用モデル: {model_size}\n長さ: {format_time(info.duration)}\n保存先: {output_file}"
 
-        return plain_text, timestamped, info_text, str(output_file)
+        return plain_text, timestamped, info_text, str(tmp_file)
 
     except Exception as e:
+        logger.error(f"文字起こしエラー: {e}", exc_info=True)
         return f"エラーが発生しました: {str(e)}", "", "", None
 
 
