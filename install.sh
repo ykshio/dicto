@@ -20,6 +20,9 @@ fi
 # --- Homebrewの確認 ---
 if ! command -v brew &> /dev/null; then
     echo "[1/5] Homebrewをインストールします..."
+    echo ""
+    echo "※ Macのログインパスワードを求められます。入力しても画面には表示されませんが、正常です。"
+    echo ""
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
     if [[ -f /opt/homebrew/bin/brew ]]; then
